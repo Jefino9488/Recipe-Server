@@ -2,6 +2,7 @@ package org.securin.recipe;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import org.hibernate.annotations.Formula;
 
 
 @Entity
@@ -29,4 +30,6 @@ public class Recipe {
     private String nutrients;
 
     private String serves;
+    @Formula("(NULLIF(regexp_replace(nutrients->>'calories','[^0-9]','','g'),'')::int)")
+    private Integer caloriesInt;
 }

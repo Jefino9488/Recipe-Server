@@ -1,31 +1,35 @@
 package org.securin.recipe;
 
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.Query;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.List;
+import jakarta.persistence.criteria.Path;
 import java.util.Optional;
 
 @Service
 public class RecipeService {
 
     private final RecipeRepository repo;
-    private final EntityManager em;
 
-    public RecipeService(RecipeRepository repo, EntityManager em) {
+    public RecipeService(RecipeRepository repo) {
         this.repo = repo;
-        this.em = em;
     }
 
     public Page<Recipe> findAllPaged(Pageable pageable) {
         return repo.findAll(pageable);
     }
 
+    /**
+     * Simplified search using Spring Data JPA Specifications.
+     * - title: case-insensitive containment
+     * - cuisine: case-insensitive exact
+     * - rating / totalTime / calories: allow simple ops like ">=4.5", "<30", "10"
+     *   calories uses the derived caloriesInt field (see Recipe.@Formula).
+     *
+     * Note: Specification.where(...) is deprecated — start with a conjunction spec.
+     */
     public Page<Recipe> search(
             Optional<String> title,
             Optional<String> cuisine,
@@ -34,60 +38,70 @@ public class RecipeService {
             Optional<String> caloriesRaw,
             Pageable pageable) {
 
-        StringBuilder where = new StringBuilder(" WHERE 1=1 ");
-        List<Object> params = new ArrayList<>();
+        // Start with a "conjunction" specification (always true), then and() further predicates.
+        Specification<Recipe> spec = (root, query, cb) -> cb.conjunction();
 
-        if (title.isPresent()) {
-            where.append(" AND lower(title) LIKE ? ");
-            params.add("%" + title.get().toLowerCase() + "%");
+        if (title.isPresent() && !title.get().isBlank()) {
+            String t = "%" + title.get().toLowerCase().trim() + "%";
+            spec = spec.and((root, query, cb) -> cb.like(cb.lower(root.get("title")), t));
         }
 
-        if (cuisine.isPresent()) {
-            where.append(" AND lower(cuisine) = ? ");
-            params.add(cuisine.get().toLowerCase());
+        if (cuisine.isPresent() && !cuisine.get().isBlank()) {
+            String c = cuisine.get().toLowerCase().trim();
+            spec = spec.and((root, query, cb) -> cb.equal(cb.lower(root.get("cuisine")), c));
         }
 
-        if (ratingRaw.isPresent()) {
+        if (ratingRaw.isPresent() && !ratingRaw.get().isBlank()) {
             String[] opVal = parseOpVal(ratingRaw.get());
-            where.append(" AND rating ").append(opVal[0]).append(" ? ");
-            params.add(Float.parseFloat(opVal[1]));
+            Float v = tryParseFloat(opVal[1]);
+            if (v != null) {
+                spec = spec.and(numericPredicate("rating", opVal[0], v));
+            } else {
+                throw new IllegalArgumentException("Invalid rating value: " + opVal[1]);
+            }
         }
 
-        if (totalTimeRaw.isPresent()) {
+        if (totalTimeRaw.isPresent() && !totalTimeRaw.get().isBlank()) {
             String[] opVal = parseOpVal(totalTimeRaw.get());
-            where.append(" AND total_time ").append(opVal[0]).append(" ? ");
-            params.add(Integer.parseInt(opVal[1]));
+            Integer v = tryParseInt(opVal[1]);
+            if (v != null) {
+                spec = spec.and(numericPredicate("totalTime", opVal[0], v));
+            } else {
+                throw new IllegalArgumentException("Invalid totalTime value: " + opVal[1]);
+            }
         }
 
-        if (caloriesRaw.isPresent()) {
+        if (caloriesRaw.isPresent() && !caloriesRaw.get().isBlank()) {
             String[] opVal = parseOpVal(caloriesRaw.get());
-            where.append(" AND (NULLIF(regexp_replace(nutrients->>'calories','[^0-9]','','g'),'')::int) ")
-                    .append(opVal[0]).append(" ? ");
-            params.add(Integer.parseInt(opVal[1]));
+            Integer v = tryParseInt(opVal[1]);
+            if (v != null) {
+                // caloriesInt is the derived integer field from the JSON using @Formula in Recipe
+                spec = spec.and(numericPredicate("caloriesInt", opVal[0], v));
+            } else {
+                throw new IllegalArgumentException("Invalid calories value: " + opVal[1]);
+            }
         }
 
-        String countSql = "SELECT count(*) FROM recipes " + where;
-        Query countQuery = em.createNativeQuery(countSql);
-        for (int i = 0; i < params.size(); i++) {
-            countQuery.setParameter(i + 1, params.get(i));
-        }
-        Number total = (Number) countQuery.getSingleResult();
+        return repo.findAll(spec, pageable);
+    }
 
-        // Fetch paginated results
-        String selectSql = "SELECT * FROM recipes " + where +
-                " ORDER BY rating DESC NULLS LAST LIMIT ? OFFSET ?";
-        Query selectQuery = em.createNativeQuery(selectSql, Recipe.class);
-        int idx = 1;
-        for (Object param : params) {
-            selectQuery.setParameter(idx++, param);
-        }
-        selectQuery.setParameter(idx++, pageable.getPageSize());
-        selectQuery.setParameter(idx, (int) pageable.getOffset());
-
-        @SuppressWarnings("unchecked")
-        List<Recipe> results = selectQuery.getResultList();
-
-        return new PageImpl<>(results, pageable, total.longValue());
+    // Helper to build a numeric predicate (supports >, >=, <, <=, =)
+    private <N extends Number & Comparable<N>> Specification<Recipe> numericPredicate(String fieldName, String op, N value) {
+        return (root, query, cb) -> {
+            Path<N> path = root.get(fieldName);
+            switch (op) {
+                case ">":
+                    return cb.gt(path.as(Number.class), value);
+                case ">=":
+                    return cb.ge(path.as(Number.class), value);
+                case "<":
+                    return cb.lt(path.as(Number.class), value);
+                case "<=":
+                    return cb.le(path.as(Number.class), value);
+                default:
+                    return cb.equal(path, value);
+            }
+        };
     }
 
     private String[] parseOpVal(String raw) {
@@ -97,7 +111,23 @@ public class RecipeService {
         } else if (raw.startsWith(">") || raw.startsWith("<") || raw.startsWith("=")) {
             return new String[]{raw.substring(0, 1), raw.substring(1).trim()};
         } else {
-            return new String[]{"=", raw}; // default to equality
+            return new String[]{"=", raw};
+        }
+    }
+
+    private Integer tryParseInt(String s) {
+        try {
+            return Integer.parseInt(s);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private Float tryParseFloat(String s) {
+        try {
+            return Float.parseFloat(s);
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 }
