@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS recipes;
 CREATE TABLE recipes (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     cuisine VARCHAR(255),
     title VARCHAR(255) NOT NULL,
     rating REAL,
