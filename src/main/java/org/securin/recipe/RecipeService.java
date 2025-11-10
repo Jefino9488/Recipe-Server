@@ -21,15 +21,6 @@ public class RecipeService {
         return repo.findAll(pageable);
     }
 
-    /**
-     * Simplified search using Spring Data JPA Specifications.
-     * - title: case-insensitive containment
-     * - cuisine: case-insensitive exact
-     * - rating / totalTime / calories: allow simple ops like ">=4.5", "<30", "10"
-     *   calories uses the derived caloriesInt field (see Recipe.@Formula).
-     *
-     * Note: Specification.where(...) is deprecated — start with a conjunction spec.
-     */
     public Page<Recipe> search(
             Optional<String> title,
             Optional<String> cuisine,

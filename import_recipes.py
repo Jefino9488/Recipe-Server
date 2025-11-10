@@ -111,6 +111,5 @@ def main(json_path: str, db_url: str):
 if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("Usage: python import_recipes.py <recipes.json> <DB_URL>")
-        print("Example: python import_recipes.py recipes.json 'postgresql://recipe:Jefino@1537@localhost:5432/recipes_db'")
         sys.exit(1)
     main(sys.argv[1], sys.argv[2])
