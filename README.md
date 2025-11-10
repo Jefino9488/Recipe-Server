@@ -1,4 +1,4 @@
-# recipieServer
+# RecipeServer
 
 Lightweight Spring Boot REST service that exposes a recipes API and supports paginated listing and flexible searching. The project includes a small JPA model, a search service using JPA Specifications, a database schema file, and a Python helper to import recipes into PostgreSQL.
 
@@ -232,19 +232,3 @@ Behavior:
 - The `nutrients` column is JSONB. The application stores the JSON as a String on the entity but the DB column is jsonb. The `caloriesInt` field is computed using an SQL `@Formula` (`regexp_replace(nutrients->>'calories','[^0-9]','','g')::int`), so ensure your JSON `nutrients` objects include a `calories` key in a recognizable format if you want numeric filtering by calories to work.
 - If `caloriesInt` computation fails for some rows (e.g., missing or non-numeric calories string), those rows may return NULL for `caloriesInt`.
 - When importing large datasets, monitor DB resources (disk, connection limits).
-
----
-
-## Security
-
-- Do not commit database credentials to VCS. The included `application.properties` contains example credentials — change them before deployment.
-- When using the Python import script, be careful with credentials in shell command history. Prefer environment variables or a secure secrets store.
-- If exposing the API publicly, add proper authentication/authorization, rate limiting, and input validation.
-
----
-
-## License & contact
-
-This README does not include a formal license. Add a LICENSE file if you plan to publish this project.
-
-For questions about the code or help running the project, provide details about your platform (OS, Java version, PostgreSQL version) and any error messages.
