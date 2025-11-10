@@ -33,7 +33,11 @@ public class RecipeController {
                                @RequestParam(defaultValue = "10") int limit) {
 
         PageRequest pr = PageRequest.of(Math.max(0, page - 1), limit, Sort.by(Sort.Direction.DESC, "rating"));
-        return svc.search(Optional.ofNullable(title), Optional.ofNullable(cuisine),
-                Optional.ofNullable(rating), Optional.ofNullable(total_time), Optional.ofNullable(calories), pr);
+        Optional<String> opTitle = Optional.ofNullable(title).filter(s -> !s.isBlank());
+        Optional<String> opCuisine = Optional.ofNullable(cuisine).filter(s -> !s.isBlank());
+        Optional<String> opRating = Optional.ofNullable(rating).filter(s -> !s.isBlank());
+        Optional<String> opTotalTime = Optional.ofNullable(total_time).filter(s -> !s.isBlank());
+        Optional<String> opCalories = Optional.ofNullable(calories).filter(s -> !s.isBlank());
+        return svc.search(opTitle, opCuisine, opRating, opTotalTime, opCalories, pr);
     }
 }
